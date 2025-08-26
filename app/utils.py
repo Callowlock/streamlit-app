@@ -1,4 +1,5 @@
 import re
+from config.settings import FQTN
 
 _BANNED_VERBS = re.compile(
     r"\b("
@@ -20,3 +21,7 @@ def is_safe_select(sql_text: str) -> bool:
     if s.startswith("with") and " select " not in f" {s} ":
         return False
     return True
+
+def expand_table(sql_text: str) -> str:
+    """Allow ad-hoc SQL to use {FQTN} like our f-strings do."""
+    return sql_text.replace("{FQTN}", FQTN)
