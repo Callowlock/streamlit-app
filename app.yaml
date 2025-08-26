@@ -1,6 +1,8 @@
 command: ["streamlit", "run", "app/main.py", "--server.address", "0.0.0.0"]
 
 env:
+  - name: PYTHONPATH
+    value: "."
   - name: WAREHOUSE_ID
     valueFrom: sql-warehouse
 
