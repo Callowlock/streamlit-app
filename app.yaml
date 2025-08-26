@@ -1,13 +1,9 @@
-# Run Streamlit inside Databricks Apps
 command: ["streamlit", "run", "app/main.py", "--server.address", "0.0.0.0"]
 
 env:
-  # Bind the SQL warehouse resource into an env var your code reads.
-  # This assumes you define a SQL warehouse resource for the app (see Step 3).
   - name: WAREHOUSE_ID
     valueFrom: sql-warehouse
 
-  # Table selection your code already supports (config/settings.py)
   - name: CATALOG
     value: "main"
   - name: SCHEMA
@@ -15,6 +11,5 @@ env:
   - name: TABLE
     value: "superstore_silver"
 
-  # Optional: silence Streamlit telemetry in prod
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
