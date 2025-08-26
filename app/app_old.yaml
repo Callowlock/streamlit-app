@@ -1,0 +1,28 @@
+command: [
+  "streamlit", 
+  "run",
+  "app.py"
+]
+
+env:
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    valueFrom: "sql-warehouse"
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"
+
+  - name: CATALOG
+    value: "main"
+  - name: SCHEMA
+    value: "retail"
+  - name: TABLE
+    value: "superstore_silver"
+
+  # ---- NEW: explicit SQL connection details ----
+  - name: DB_HOST
+    value: "dbc-6e35a4be-f0c0.cloud.databricks.com"   # <-- workspace host (NO https://, no slash)
+
+  - name: DB_HTTP_PATH
+    value: "/sql/1.0/warehouses/48fb9bf838e622d5"        # <-- from SQL Warehouses > your Serverless Starter > Connection details
+
+  - name: DB_TOKEN
+    value: "dapi2221862046872f7b7fd40a065917837b"  
