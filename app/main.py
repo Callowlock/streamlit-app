@@ -1,6 +1,17 @@
-import streamlit as st
-import pandas as pd
 import os
+
+# Force PAT and purge any platform-injected OAuth vars
+os.environ["DATABRICKS_AUTH_TYPE"] = "pat"
+for k in ("DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"):
+    os.environ.pop(k, None)
+
+import streamlit as st
+
+os.environ.setdefault("DATABRICKS_HOST",  st.secrets["DATABRICKS_HOST"])
+os.environ.setdefault("DATABRICKS_TOKEN", st.secrets["DATABRICKS_TOKEN"])
+os.environ.setdefault("GENIE_SPACE_ID",   st.secrets["GENIE_SPACE_ID"])
+
+import pandas as pd
 from config.settings import FQTN
 
 from app.db import get_conn

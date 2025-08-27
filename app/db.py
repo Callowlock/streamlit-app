@@ -1,12 +1,16 @@
-from databricks import sql
-from databricks.sdk.core import Config
 import os
+import databricks.sql as dbsql
+
+def _server_hostname_from_host(url: str) -> str:
+    return url.replace("https://", "").rstrip("/")
 
 def get_conn():
-    cfg = Config()
-    http_path = f"/sql/1.0/warehouses/{os.environ['WAREHOUSE_ID']}"
-    return sql.connect(
-        server_hostname=cfg.host,
-        http_path=http_path,
-        credentials_provider=lambda: cfg.authenticate,
+    host = os.environ["DATABRICKS_HOST"]
+    token = os.environ["DATABRICKS_TOKEN"]
+    wh_id = os.environ["WAREHOUSE_ID"]
+
+    return dbsql.connect(
+        server_hostname=_server_hostname_from_host(host),
+        http_path=f"/sql/1.0/warehouses/{wh_id}",
+        access_token=token,
     )
