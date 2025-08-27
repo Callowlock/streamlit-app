@@ -14,134 +14,100 @@ def render_results(pdf: pd.DataFrame):
     st.subheader("Results")
     st.dataframe(pdf, use_container_width=True)
 
-
 def render_quick_chart(pdf: pd.DataFrame):
     try:
         import altair as alt
         if pdf is None or pdf.empty:
             return
 
-        # --- Normalize dtypes & columns ---
         df = pdf.copy()
-        lower_map = {c: c.lower() for c in df.columns}
-        df.rename(columns=lower_map, inplace=True)
+        # Lowercase for consistent matching (doesn't change display names)
+        df.columns = [c.lower() for c in df.columns]
 
-        # Identify columns
-        time_like = [c for c in df.columns if any(k in c for k in ["order_date", "date", "month", "quarter", "year"])]
-        num_cols  = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-        cat_cols  = [c for c in df.columns if c not in num_cols]
+        # Pick a time-like column deterministically
+        ts_col = next((c for c in ["quarter", "month", "year", "order_date", "date"] if c in df.columns), None)
+        num_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 
-        # Parse dates where appropriate
-        for c in time_like:
-            if "year" in c:
-                # keep numeric for year
-                if not pd.api.types.is_numeric_dtype(df[c]):
-                    df[c] = pd.to_numeric(df[c], errors="ignore")
-            else:
-                try:
-                    df[c] = pd.to_datetime(df[c], errors="ignore")
-                except Exception:
-                    pass
-
-        # Heuristic: choose a single time column if present
-        ts_col = next((c for c in ["month", "quarter", "year", "order_date", "date"] if c in df.columns), None)
-
-        # Avoid unreadable auto-plots
-        if len(df.columns) > 20 or any(df[c].nunique() > 100 for c in cat_cols if c != (ts_col or "")):
+        if not ts_col or not num_cols:
             return
 
-        # Helper for x encoding (fixes the YEAR bug)
-        def x_enc_for(col: str):
-            if col == "year":
-                return alt.X(f"{col}:O", title="Year")  # categorical axis
-            return alt.X(f"{col}:T", title=col.title())
+        # Detect if ts_col is datetime-like
+        is_dt = pd.api.types.is_datetime64_any_dtype(df[ts_col])
 
-        # --- Time series: line ---
-        if ts_col and len(num_cols) >= 1:
-            # prefer common metric aliases if present
-            metrics = [c for c in num_cols if c in ("sales", "profit", "profit_margin", "quantity", "discount")] or num_cols
-            plot_df = df[[ts_col] + metrics].copy().sort_values(ts_col)
+        # Normalize quarter for grouped bars
+        # If ts_col is datetime, derive 1..4 → 'Q1'..'Q4'
+        if ts_col == "quarter":
+            if is_dt:
+                df["quarter"] = df[ts_col].dt.quarter
+            qmap = {1: "Q1", 2: "Q2", 3: "Q3", 4: "Q4"}
+            if pd.api.types.is_integer_dtype(df["quarter"]):
+                df["quarter"] = df["quarter"].map(qmap)
+            quarter_order = ["Q1", "Q2", "Q3", "Q4"]
 
-            st.subheader("Quick chart")
-            if len(metrics) == 1:
-                y = metrics[0]
-                st.altair_chart(
-                    alt.Chart(plot_df).mark_line(point=True).encode(
-                        x=x_enc_for(ts_col),
-                        y=alt.Y(f"{y}:Q"),
-                        tooltip=list(plot_df.columns),
-                    ).properties(height=320),
-                    use_container_width=True,
-                )
-            else:
-                long_df = plot_df.melt(id_vars=[ts_col], value_vars=metrics, var_name="metric", value_name="value")
-                st.altair_chart(
-                    alt.Chart(long_df).mark_line(point=True).encode(
-                        x=x_enc_for(ts_col),
-                        y=alt.Y("value:Q"),
-                        color="metric:N",
-                        tooltip=[ts_col, "metric", "value"],
-                    ).properties(height=320),
-                    use_container_width=True,
-                )
-            return
+        # Prefer common metric names; fall back to all numerics
+        preferred = ("sales", "profit", "quantity", "discount", "profit_margin")
+        metrics = [c for c in num_cols if c in preferred] or num_cols
 
-        # --- Categorical: bar (dim + metric[s]) ---
-        candidate_dims = [c for c in cat_cols if c != (ts_col or "")]
-        if candidate_dims and len(num_cols) >= 1:
-            dim = candidate_dims[0]
-            metrics = [c for c in num_cols if c in ("sales", "profit", "profit_margin", "quantity", "discount")] or num_cols
+        # Grouped bars ONLY for quarter with multiple metrics and <=4 periods
+        n_periods = df[ts_col].nunique(dropna=True)
+        use_grouped_bars = (ts_col == "quarter") and (len(metrics) >= 2) and (n_periods <= 4)
 
-            work = df[[dim] + metrics].copy()
-            top_metric = metrics[0]
-            N = 25
-            work = work.sort_values(top_metric, ascending=False).head(N)
+        st.subheader("Quick chart")
 
-            st.subheader("Quick chart")
-            if len(metrics) == 1:
-                y = metrics[0]
-                st.altair_chart(
-                    alt.Chart(work).mark_bar().encode(
-                        x=alt.X(f"{dim}:N", sort="-y"),
-                        y=alt.Y(f"{y}:Q"),
-                        tooltip=list(work.columns),
-                    ).properties(height=360),
-                    use_container_width=True,
-                )
-            else:
-                long_df = work.melt(id_vars=[dim], value_vars=metrics, var_name="metric", value_name="value")
-                st.altair_chart(
-                    alt.Chart(long_df).mark_bar().encode(
-                        x=alt.X(f"{dim}:N", sort="-y"),
-                        y=alt.Y("value:Q"),
-                        color="metric:N",
-                        tooltip=[dim, "metric", "value"],
-                    ).properties(height=360),
-                    use_container_width=True,
-                )
-            return
-
-        # --- Scatter: exactly two numeric columns ---
-        if len(num_cols) == 2:
-            x, y = num_cols
-            st.subheader("Quick chart")
+        if use_grouped_bars:
+            # Drop ratios in grouped bars (scale mismatch)
+            bar_metrics = [m for m in metrics if m != "profit_margin"] or metrics
+            work = df[["quarter"] + bar_metrics].copy()
+            long_df = work.melt(id_vars=["quarter"], value_vars=bar_metrics,
+                                var_name="metric", value_name="value")
             st.altair_chart(
-                alt.Chart(df[[x, y]]).mark_circle().encode(
-                    x=alt.X(f"{x}:Q"),
-                    y=alt.Y(f"{y}:Q"),
-                    tooltip=[x, y],
+                alt.Chart(long_df).mark_bar().encode(
+                    x=alt.X("quarter:N", sort=quarter_order, title="Quarter"),
+                    y=alt.Y("value:Q"),
+                    color=alt.Color("metric:N", title="Metric"),
+                    tooltip=["quarter", "metric", "value"],
                 ).properties(height=360),
                 use_container_width=True,
             )
             return
 
-        # Otherwise, fail safe to table
-        return
+        # Otherwise: line(s)
+        def x_enc_for(col: str):
+            # Temporal axis for true datetimes
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                return alt.X(f"{col}:T", title=col.replace("_"," ").title())
+            # Discrete labels for derived calendar fields
+            if col in {"year", "quarter", "month"}:
+                return alt.X(f"{col}:N", title=col.title())
+            return alt.X(f"{col}:N", title=col.replace("_"," ").title())
 
+        plot_df = df[[ts_col] + metrics].copy().sort_values(ts_col)
+
+        if len(metrics) == 1:
+            y = metrics[0]
+            st.altair_chart(
+                alt.Chart(plot_df).mark_line(point=True).encode(
+                    x=x_enc_for(ts_col),
+                    y=alt.Y(f"{y}:Q"),
+                    tooltip=list(plot_df.columns),
+                ).properties(height=320),
+                use_container_width=True,
+            )
+        else:
+            long_df = plot_df.melt(id_vars=[ts_col], value_vars=metrics,
+                                   var_name="metric", value_name="value")
+            st.altair_chart(
+                alt.Chart(long_df).mark_line(point=True).encode(
+                    x=x_enc_for(ts_col),
+                    y=alt.Y("value:Q"),
+                    color=alt.Color("metric:N", title="Metric"),
+                    tooltip=[ts_col, "metric", "value"],
+                ).properties(height=320),
+                use_container_width=True,
+            )
     except Exception:
-        # Never block render on chart failure
+        # Fail safe to table if plotting errors out
         return
-
 
 
 def render_download(pdf: pd.DataFrame, filename: str = "genie_results.csv"):
