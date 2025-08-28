@@ -131,6 +131,7 @@ def translate(nl_query: str, fqtn: str, data_min, data_max) -> str:
             return "ORDER BY profit_margin DESC NULLS LAST"
         return f"ORDER BY {m} DESC"
 
+    # --- Grains (time series) ---
     if grain:
         dt = {"month":"month", "quarter":"quarter", "year":"year"}[grain]
         trunc = {
@@ -148,6 +149,7 @@ def translate(nl_query: str, fqtn: str, data_min, data_max) -> str:
         {order_by_for(metric, dt)}
         """.strip()
 
+    # --- Profit margin by dimension ---
     if metric == "profit_margin" and dim:
         return f"""
         SELECT
@@ -161,6 +163,7 @@ def translate(nl_query: str, fqtn: str, data_min, data_max) -> str:
         ORDER BY profit_margin DESC NULLS LAST
         """.strip()
 
+    # --- Top-N ---
     if topn and dim:
         agg = agg_expr(metric)
         return f"""
@@ -184,6 +187,7 @@ def translate(nl_query: str, fqtn: str, data_min, data_max) -> str:
         LIMIT {topn}
         """.strip()
 
+    # --- Dimensioned aggregations ---
     if dim:
         wants_multi = ("sales and profit" in q) or ("profit and sales" in q)
         agg = "SUM(sales) AS sales, SUM(profit) AS profit" if wants_multi else agg_expr(metric)
@@ -195,4 +199,27 @@ def translate(nl_query: str, fqtn: str, data_min, data_max) -> str:
         {order_by_for(metric, dim)}
         """.strip()
 
+    # --- Totals / Averages (new) ---
+    if re.search(r"\btotal sales\b", q):
+        return f"""
+        SELECT SUM(sales) AS total_sales
+        FROM {fqtn}
+        {where}
+        """.strip()
+
+    if re.search(r"\baverage sales per order\b", q):
+        return f"""
+        SELECT AVG(sales) AS avg_sales
+        FROM {fqtn}
+        {where}
+        """.strip()
+
+    if re.search(r"\btotal profit\b", q):
+        return f"""
+        SELECT SUM(profit) AS total_profit
+        FROM {fqtn}
+        {where}
+        """.strip()
+
+    # --- Fallback ---
     return f"SELECT * FROM {fqtn} LIMIT 100"
