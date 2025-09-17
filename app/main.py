@@ -1,6 +1,5 @@
 import os
 
-# Force PAT and purge any platform-injected OAuth vars
 os.environ["DATABRICKS_AUTH_TYPE"] = "pat"
 for k in ("DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"):
     os.environ.pop(k, None)
@@ -18,7 +17,8 @@ from app.db import get_conn
 from app.data_bounds import get_date_bounds
 from app.ui import render_form, render_results, render_quick_chart, render_download
 from app.utils import is_safe_select, expand_table
-from providers.rules_provider import translate as rules_translate
+from providers import genie_provider
+#from providers.rules_provider import translate as rules_translate
 
 if "WAREHOUSE_ID" not in os.environ:
     st.error("WAREHOUSE_ID not set. Check app.yaml 'valueFrom: sql-warehouse' binding.")
@@ -34,29 +34,22 @@ user_q, submitted = render_form(default_example="Show sales by month")
 
 if submitted and user_q.strip():
     q = user_q.strip()
-
-    # Detect manual SQL if it starts with SELECT or WITH (ignoring case)
     is_manual = q.lower().startswith(("select", "with"))
 
     if is_manual:
         sql_text = q
+        provider_used = "Manual SQL"
     else:
         with st.spinner("Asking Genie..."):
-            try:
-                sql_text = rules_translate(q, FQTN, DATA_MIN, DATA_MAX)
-            except ValueError as ve:
-                st.warning(str(ve))
-                st.stop()
+            sql_text = genie_provider.translate(q, FQTN, DATA_MIN, DATA_MAX)
+        provider_used = "Genie (stub)"
 
-    # Expand {FQTN} placeholders for both manual and Genie-generated SQL
     sql_text = expand_table(sql_text)
-
-    # Safety check
     if not is_safe_select(sql_text):
         st.error("Only read-only single-statement SELECTs are allowed.")
         st.stop()
 
-    # Show SQL back to user
+    st.caption(f"Provider: {provider_used}")
     st.code(sql_text, language="sql")
 
     # Execute

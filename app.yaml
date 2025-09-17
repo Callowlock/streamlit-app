@@ -13,9 +13,9 @@ env:
   - name: CATALOG
     value: "main"
   - name: SCHEMA
-    value: "retail"
+    value: "retail_gold"
   - name: TABLE
-    value: "superstore_silver"
+    value: "vw_sales_daily"
 
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
